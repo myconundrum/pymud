@@ -3,28 +3,41 @@
 from db import *
 from mush_commands import *
 from world import *
+from clients import *
 
+import os.path
 
+def init_game(): 
 
+	init_player_manager()
+	init_db()
 
-
-
-def main(): 
-
-	world = World()
+	init_world()
 	init_commands()
-
-	world.load("in.db")
-	cmd_look(world,'')
-
-	world.db.oset_flag(0,ROOM_FLAG)
-		
-	while (world.running()) :
-		do_commands(world)
+	init_clients()
 
 
 
+	if (os.path.isfile("in.db")):
+		get_world().load("in.db")
+	else: 
+		create_world()
 
-	world.save("in.db")
 
-main()
+if __name__ == '__main__':
+
+
+    logging.basicConfig(level=logging.DEBUG)
+
+    init_game()
+    world = get_world()
+
+    while world.running():
+    	update_clients()
+
+    get_world().save("in.db")
+
+    logging.info("Server shutdown.")
+
+
+

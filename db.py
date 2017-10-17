@@ -1,7 +1,15 @@
 
 
+import pickle
+
 _nothing 		= -1
-_db_version		= 1
+_db_version		= 2
+
+_db = None
+
+
+
+
 
 class object_database():
 
@@ -118,4 +126,19 @@ class object_database():
 
 
 
-		
+def init_db():
+	global _db
+	_db = object_database()
+
+def load_db(f):
+	global _db
+	_db = pickle.load(f)
+
+def save_db(f):
+	pickle.dump(_db,f)
+
+def get_db():
+	return _db 
+
+
+

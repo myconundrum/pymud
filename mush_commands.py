@@ -11,185 +11,218 @@ OPAQUE_FLAG		= 'OPAQUE'
 _commands = {}
 _nospacecommands = {}
 
+_master_room = 1
+
 
 NO_DESC_MESSAGE = 'You see nothing special.'
 
+from db import *
+from world import get_world
+from player import * 
 
 
 def _get_room_inventory(w,loc) :
-	return [x for x in w.db.oget_contains(loc) if not w.db.ohas_flag(x,EXIT_FLAG)]
+	db = get_db()
+	return [x for x in db.oget_contains(loc) if not db.ohas_flag(x,EXIT_FLAG)]
 
 def _get_room_exits(w,loc) :
-	return [x for x in w.db.oget_contains(loc) if w.db.ohas_flag(x,EXIT_FLAG)]
+	db = get_db()
+	return [x for x in db.oget_contains(loc) if db.ohas_flag(x,EXIT_FLAG)]
 
-def _get_dbref(w,a):
+def _get_dbref(player,a):
 
+	db = get_db()
 	# get "built in references
 	if a == 'here':
-		return w.db.oget_location(w.player)
+		return db.oget_location(player.dbref)
 	if a == 'me':
-		return w.player 
+		return player.dbref 
 	if a[0]=='#':
 		return int(a[1:])
 
 	# is this the name of an object the player is carrying?
-	for l in w.db.oget_contains(w.player):
-		if a == w.db.oget_attribute(l,NAME_ATTR):
+	for l in db.oget_contains(player.dbref):
+		if a == db.oget_attribute(l,NAME_ATTR):
 			return l
 
 	# is this the name of an object in the same room?
-	for l in w.db.oget_contains(w.db.oget_location(w.player)):
-		if a == w.db.oget_attribute(l,NAME_ATTR):
+	for l in db.oget_contains(db.oget_location(player.dbref)):
+		if a == db.oget_attribute(l,NAME_ATTR):
 			return l 
 
-	return w.db.nothing
+	return db.nothing
 
 
-def _split_command_string_on(w,args,sp):
+def _split_command_string_on(args,sp):
 	a = args.split(sp,1)
 	return [a[0].strip(),a[1].strip()] if len(a) == 2 else [args.strip(),None]
 
-def cmd_name(w,args):
+def cmd_name(player,args):
 
-	a = _split_command_string_on(w,args,'=')
-	dbref = _get_dbref(w,a[0])
+	db = get_db()
+	rmsg = ''
+	a = _split_command_string_on(args,'=')
+	dbref = _get_dbref(player,a[0])
 
-	if (dbref != w.db.nothing):
-		w.db.oset_attribute(dbref,NAME_ATTR,a[1])
-		print ('Named.')
+	if (dbref != db.nothing):
+		db.oset_attribute(dbref,NAME_ATTR,a[1])
+		rmsg = 'Named.'
 	else : 
-		print('Invalid format for @name command.' if a[1] == None else 
-			'I don\'t see anything named ' + a[0] + ' here.')
+		rmsg = 'Invalid format for @name command.' if a[1] == None else 'I don\'t see anything named ' + a[0] + ' here.'
+	return rmsg
 
-def cmd_quit(w,args):
-	w.quit()
+def cmd_quit(player,args):
+	get_world().quit()
+	return ''
 
-def cmd_pose(w,args):
-	print (w.db.oget_attribute(w.player,NAME_ATTR) + ' ' + args)
+def cmd_pose(player,args):
+	return get_db().oget_attribute(player.dbref,NAME_ATTR) + ' ' + args
 
-def cmd_semipose(w,args):
-	print (w.db.oget_attribute(w.player,NAME_ATTR) + args)
+def cmd_semipose(player,args):
+	return get_db().oget_attribute(player.dbref,NAME_ATTR) + args
 
-def cmd_say(w,args):
-	print (w.db.oget_attribute(w.player,NAME_ATTR) + ' says, "'+args+'"')
+def cmd_say(player,args):
+	return get_db().oget_attribute(player.dbref,NAME_ATTR) + ' says, "'+args+'"'
 
-def cmd_create(w,args):
+def cmd_create(player,args):
+
+	db = get_db()
 	# no quota or cost right now.
 	if (args.strip() == ''):
-		print ("Create what?")
+		return "Create what?"
 	else:
-		o = w.db.ocreate()
-		w.db.oset_attribute(o,NAME_ATTR,args)
-		w.db.omove(o,w.player)
+		o = db.ocreate()
+		db.oset_attribute(o,NAME_ATTR,args)
+		db.omove(o,player.dbref)
+	return ''
 
-def cmd_describe(w,args):
-	a = _split_command_string_on(w,args,'=')
-	dbref = _get_dbref(w,a[0])
+def cmd_describe(player,args):
+	
+	db = get_db()
+	rmsg = ''
+	a = _split_command_string_on(args,'=')
+	dbref = _get_dbref(player,a[0])
 
-	if (dbref != w.db.nothing):
+	if (dbref != db.nothing):
 		if (a[1] != None):
-			w.db.oset_attribute(dbref,DESC_ATTR,a[1])
-			print ('Described.')
+			db.oset_attribute(dbref,DESC_ATTR,a[1])
+			rmsg = 'Described.'
 		else :
-			w.db.oclear_attribute(dbref,DESC_ATTR)
+			db.oclear_attribute(dbref,DESC_ATTR)
 	else : 
-		print('I don\'t see anything named ' + a[0] + ' here.')
+		rmsg = 'I don\'t see anything named ' + a[0] + ' here.'
+
+	return rmsg
 			
 
 
-def cmd_look(w,args):
+def cmd_look(player,args):
+
+	rmsg = ''
+	db = get_db()
 
 
-	loc = w.db.oget_location(w.player)
-	dbref = loc if args == '' else _get_dbref(w,args)
-	if dbref == w.db.nothing:
-		print ('you don\'t see anything named ' + args +' here.')
-		return
+	loc = db.oget_location(player.dbref)
+	dbref = loc if args == '' else _get_dbref(player,args)
+	if dbref == db.nothing:
+		return 'you don\'t see anything named ' + args +' here.'
 
-	print (w.db.oget_attribute(dbref,NAME_ATTR))
-	if (w.db.ohas_attribute(dbref,DESC_ATTR)):
-		print (w.db.oget_attribute(dbref,DESC_ATTR))
+	rmsg = db.oget_attribute(dbref,NAME_ATTR) + '\n'
+	if (db.ohas_attribute(dbref,DESC_ATTR)):
+		rmsg = rmsg +  db.oget_attribute(dbref,DESC_ATTR)
 	else :
-		print (NO_DESC_MESSAGE)
+		rmsg = rmsg + NO_DESC_MESSAGE
 
 	# room...
 	if (dbref == loc) :
-		contains = _get_room_inventory(w,dbref)
-		exits = _get_room_exits(w,dbref)
-		contains.remove(w.player)
+		contains = _get_room_inventory(player,dbref)
+		exits = _get_room_exits(player,dbref)
+		contains.remove(player.dbref)
 
 		if (len(exits)>0):
-			print("Exits:")
+			rmsg = rmsg + '\nExits:'
 			for e in exits:
-				print (w.db.oget_attribute(e,NAME_ATTR).split(';')[0])
+				rmsg = rmsg + '\n'+ db.oget_attribute(e,NAME_ATTR).split(';')[0]
 
 		if (len(contains)>0):
-			print ("You see:")
+			rmsg = rmsg + '\n' + "You see:"
 			for l in contains: 
-				print (w.db.oget_attribute(l,NAME_ATTR))
+				rmsg = rmsg + '\n' + db.oget_attribute(l,NAME_ATTR)
 	else:
-		if (not w.db.ohas_flag(dbref,OPAQUE_FLAG)):
-			contains = w.db.oget_contains(dbref)
-			print (contains)			
+		if (not db.ohas_flag(dbref,OPAQUE_FLAG)):
+			contains = db.oget_contains(dbref)
 
 			if (len(contains)>0):
-				print ("Carrying: ")
+				rmsg = rmsg + '\nCarrying:'
 				for l in contains: 
-					print (w.db.oget_attribute(l,NAME_ATTR))
-
+					rmsg = rmsg + '\n' + db.oget_attribute(l,NAME_ATTR)
+	return rmsg
 
   #@dig <room name> [= <exit name>;<exit alias>*,<exit name>;<exit alias>*]
   #@dig/teleport
 
 
-def _unlink_exit(w,exit):
+def _unlink_exit(player,exit):
 	# should remove reference in linked room.. Currently unimplemented
 	pass
 
-def _link_exit(w,exit,todbref):
-	if w.db.ohas_flag(exit,EXIT_FLAG) and w.db.ohas_flag(todbref,ROOM_FLAG):
-		_unlink_exit(w,exit)
-		w.db.oset_attribute(exit,DROPTO_ATTR,todbref)
+def _link_exit(player,exit,todbref):
+	db = get_db()
+	if db.ohas_flag(exit,EXIT_FLAG) and db.ohas_flag(todbref,ROOM_FLAG):
+		_unlink_exit(player,exit)
+		db.oset_attribute(exit,DROPTO_ATTR,todbref)
+	return ''
  
-def cmd_dig(w,args):
-	a = _split_command_string_on(w,args,'=')
+def cmd_dig(player,args):
+
+	db = get_db()
+	a = _split_command_string_on(args,'=')
 	
-	o = w.db.ocreate()
-	w.db.oset_attribute(o,NAME_ATTR,a[0])
-	w.db.oset_flag(o,ROOM_FLAG)
+	o = db.ocreate()
+	db.oset_attribute(o,NAME_ATTR,a[0])
+	db.oset_flag(o,ROOM_FLAG)
 
 	if (a[1] != None):
-		a = _split_command_string_on(w,a[1],',')
-		e1 = w.db.ocreate()
-		w.db.oset_attribute(e1,NAME_ATTR,a[0])
-		w.db.oset_flag(e1,EXIT_FLAG)
-		w.db.omove(e1,w.db.oget_location(w.player))
-		_link_exit(w,e1,o)
+		a = _split_command_string_on(a[1],',')
+		e1 = db.ocreate()
+		db.oset_attribute(e1,NAME_ATTR,a[0])
+		db.oset_flag(e1,EXIT_FLAG)
+		db.omove(e1,db.oget_location(player.dbref))
+		_link_exit(player,e1,o)
 		if (a[1] != None):
-			e2 = w.db.ocreate()
-			w.db.oset_attribute(e2,NAME_ATTR,a[1])
-			w.db.oset_flag(e2,EXIT_FLAG)
-			w.db.omove(e2,o)
-			_link_exit(w,e2,w.db.oget_location(w.player))
+			e2 = db.ocreate()
+			db.oset_attribute(e2,NAME_ATTR,a[1])
+			db.oset_flag(e2,EXIT_FLAG)
+			db.omove(e2,o)
+			_link_exit(player,e2,db.oget_location(player.dbref))
+
+	return ''
 		
 
-def _command_move_player(w,loc):
-	w.db.omove(w.player,loc)
+def _command_move_player(player,loc):
+	get_db().omove(player.dbref,loc)
+	return ''
 
-def cmd_dump(w,args):
-	w.save("in.db")
+def cmd_dump(player,args):
+	get_world().save("in.db")
+	return ''
 
 
 
-def cmd_teleport(w,args):
-	a = _split_command_string_on(w,args,'=')
-	loc = _get_dbref(w,a[0]) if a[1] == None else _get_dbref(w,a[1])
-	dbref = w.player if a[1] == None else _get_dbref(w,a[0])
-	print ("teleporting " + str(dbref) + " to " + str(loc))
+def cmd_teleport(player,args):
 
-	if w.db.ohas_flag(loc,ROOM_FLAG) and not w.db.ohas_flag(dbref,ROOM_FLAG) and not w.db.ohas_flag(dbref,EXIT_FLAG):
-		w.db.omove(dbref,loc)
-		cmd_look(w,'')
+	db = get_db()
+	rmsg = ''
+	a = _split_command_string_on(args,'=')
+	loc = _get_dbref(player,a[0]) if a[1] == None else _get_dbref(player,a[1])
+	dbref = player.dbref if a[1] == None else _get_dbref(player,a[0])
+	
+	if db.ohas_flag(loc,ROOM_FLAG) and not db.ohas_flag(dbref,ROOM_FLAG) and not db.ohas_flag(dbref,EXIT_FLAG):
+		db.omove(dbref,loc)
+		rmsg = cmd_look(player,'')
+
+
+	return rmsg
 
 def init_commands() : 
 	_commands['look'] 			= cmd_look
@@ -211,27 +244,80 @@ def init_commands() :
 	#_commadns['@dig/teleport']  = cmd_dig_teleport
 
 
-def _match_exit_alias(w,e,str) :
-	for n in w.db.oget_attribute(e,NAME_ATTR).split(';'):
+def _match_exit_alias(e,str) :
+	for n in get_db().oget_attribute(e,NAME_ATTR).split(';'):
 		if n==str:
 			return True
 	return False
 
 
+def connect_character(player,name,password):
+	
+	dbref = get_player_manager().connect_player(name,password)
 
-def do_commands(w) :
+	if dbref == -1 :
+		return "Invalid character name or password."
 
-	args = input('> ')
+	player.dbref = dbref
+	player.set_connecting(False)
+	return "Connected..."
+
+
+
+
+def create_character(player,name,password):
+	
+	dbref = get_player_manager().create_player(name,password)
+
+	if (dbref == -1): 
+		return "That name already exists."
+	
+	player.dbref = dbref 
+	# move past login..
+	player.set_connecting(False)
+
+	db = get_db()
+
+	db.oset_attribute(dbref,NAME_ATTR,name)
+	db.oset_flag(dbref,PLAYER_FLAG)
+	db.omove(dbref,_master_room)
+
+	return "Character named " + name + " created.\n" 
+
+	cmd_look(player,'')
+
+
+def process_connecting(player,args):
+	args = args.split(' ')
+	if (args[0] == 'create') and (len(args) == 3):
+		return create_character(player,args[1],args[2])
+	elif (args[0] == 'connect' and len(args) == 3):
+		return connect_character(player,args[1],args[2])
+	else:
+		return "Only connect or create allowed here."
+
+
+
+def process_command(player,args) :
+
+	if (player.is_connecting()):
+		return process_connecting(player,args)
+
 	matched = False
 
-	for e in _get_room_exits(w,w.db.oget_location(w.player)):
-		if (_match_exit_alias(w,e,args)):
-			_command_move_player(w,w.db.oget_attribute(e,DROPTO_ATTR))
+	if (len(args)==0) :
+		return ""
+	w = get_world() 
+	db = get_db()
+
+	for e in _get_room_exits(player,db.oget_location(player.dbref)):
+		if (_match_exit_alias(e,args)):
+			rmsg = _command_move_player(player,db.oget_attribute(e,DROPTO_ATTR))
 			matched = True
 
 	# test 1 character / nospace commands
 	if (not matched) and (args[0] in _nospacecommands):
-		_nospacecommands[args[0]](w,args[1:])
+		rmsg = _nospacecommands[args[0]](player,args[1:])
 		matched = True
 
 	if not matched:
@@ -240,11 +326,19 @@ def do_commands(w) :
 		if args[0] in _commands : 
 			if len(args) == 1:
 				args.append('')
-			_commands[args[0]](w,args[1])
+			rmsg = _commands[args[0]](player,args[1])
 			matched = True
 
 	if not matched: 
-		print('huh?')
+		rmsg = 'huh?'
+
+	return rmsg + '\n'
+
+
+def do_commands(w) :
+
+	args = input('> ')
+	
 
 
 
