@@ -24,6 +24,9 @@ class PlayerConnection():
     def get_client(self):
     	return self.client
 
+    def logout(self):
+    	self.client.active = False
+
     def set_connecting(self,val):
     	self.connecting=val
 

@@ -1,7 +1,7 @@
 
 import logging
 from miniboa import TelnetServer
-from mush_commands import process_command
+from mush_commands import process_command,hide_player
 from world import get_world
 from player import *
 
@@ -38,8 +38,11 @@ def on_connect(client):
 def on_disconnect(client):
 
     logging.info("Lost connection to {}".format(client.addrport()))
-    get_player_manager().remove_connection(client)
-    broadcast("{} leaves the conversation.\n".format(client.addrport()))
+    for e in get_player_manager().get_connected_players():
+        if e.client == client:
+            hide_player(e.dbref)
+            get_player_manager().remove_connection(e)
+            return
 
 
 def kick_idle():
@@ -58,7 +61,8 @@ def process_clients():
         if client.active and client.cmd_ready:
             msg = client.get_command()
             logging.info("{} says '{}'".format(client.addrport(), msg))
-            player.send(process_command(player,msg))
+            process_command(player,msg)
+
 
 def update_clients():
 

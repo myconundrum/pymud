@@ -4,6 +4,7 @@ from player import *
 import pickle
 from shutil import copyfile
 import os
+import logging
 
 
 _world_version = 1
@@ -34,7 +35,7 @@ class World():
 		f = open(file,"rb")
 		self.name = pickle.load(f)
 		self.version 	= pickle.load(f)
-		print ("Loading database for " + self.name + " " + str(self.version)+".")
+		logging.info("Loading database for " + self.name + " " + str(self.version)+".")
 		load_db(f)
 		load_player_manager(f)
 
