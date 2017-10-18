@@ -1,13 +1,14 @@
 NAME_ATTR 		= 'name'
 DESC_ATTR 		= 'desc'
 DROPTO_ATTR 	= 'dropto'
-
+OSUCCESS_ATTR   = 'osuccess'
 
 ROOM_FLAG 		= 'ROOM'
 EXIT_FLAG 		= 'EXIT'
 PLAYER_FLAG 	= 'PLAYER'
 OPAQUE_FLAG		= 'OPAQUE'
 HIDDEN_FLAG     = 'HIDDEN'
+
 
 
 _commands = {}
@@ -23,12 +24,12 @@ from world import get_world
 from player import * 
 
 
-def _get_room_inventory(w,loc,hidden) :
+def _get_room_inventory(loc,hidden) :
 	db = get_db()
 	return [x for x in db.oget_contains(loc) if (not db.ohas_flag(x,EXIT_FLAG)) and (hidden or not db.ohas_flag(x,HIDDEN_FLAG))]
 	
 		
-def _get_room_exits(w,loc,hidden) :
+def _get_room_exits(loc,hidden) :
 	db = get_db()
 	return [x for x in db.oget_contains(loc) if db.ohas_flag(x,EXIT_FLAG) and (hidden or not db.ohas_flag(x,HIDDEN_FLAG))]
 	
@@ -36,9 +37,10 @@ def _get_room_exits(w,loc,hidden) :
 def _get_dbref(player,a):
 
 	db = get_db()
+	loc = db.oget_location(player.dbref)
 	# get "built in references
 	if a == 'here':
-		return db.oget_location(player.dbref)
+		return loc
 	if a == 'me':
 		return player.dbref 
 	if a[0]=='#':
@@ -50,9 +52,14 @@ def _get_dbref(player,a):
 			return l
 
 	# is this the name of an object in the same room?
-	for l in db.oget_contains(db.oget_location(player.dbref)):
+	for l in _get_room_inventory(loc,False):
 		if a == db.oget_attribute(l,NAME_ATTR):
 			return l 
+
+	# is this an exit (including alias)
+	for e in _get_room_exits(loc,False):
+		if (_match_exit_alias(e,a)):
+			return e
 
 	return db.nothing
 
@@ -61,41 +68,44 @@ def _split_command_string_on(args,sp):
 	a = args.split(sp,1)
 	return [a[0].strip(),a[1].strip()] if len(a) == 2 else [args.strip(),None]
 
-def cmd_name(player,args):
 
+def _set_named_attr(player,args,extra):
+	
 	db = get_db()
-	rmsg = ''
 	a = _split_command_string_on(args,'=')
 	dbref = _get_dbref(player,a[0])
 
 	if (dbref != db.nothing):
-		db.oset_attribute(dbref,NAME_ATTR,a[1])
-		player.send("Named.")
+			db.oset_attribute(dbref,extra,a[1])
+			player.send("Set.")
 	else : 
-		player.send("Invalid format for @name command." if a[1] == None else 'I don\'t see anything named ' + a[0] + ' here.')
+		player.send("Invalid format for command." if a[1] == None else 'I don\'t see anything named ' + a[0] + ' here.')
 
-
-def cmd_quit(player,args):
+def cmd_quit(player,args,extra):
 	player.send("Goodbye.")
 	player.logout()
 	
-def cmd_shutdown(player,args):
+def cmd_shutdown(player,args,extra):
 	# should only be possible with special permissions.
 	get_world().quit()
 
 
+def _broadcast_location(dbref,msg):
+
+	db = get_db()
+	for p in get_player_manager().get_connected_players():
+		if db.oget_location(p.dbref) == dbref:
+			p.send(msg)
 
 
-def cmd_pose(player,args):
-	player.send(get_db().oget_attribute(player.dbref,NAME_ATTR) + ' ' + args)
 
-def cmd_semipose(player,args):
-	player.send(get_db().oget_attribute(player.dbref,NAME_ATTR) + args)
+def cmd_emote(player,args,emoteformat):
+	_broadcast_location(
+		get_db().oget_location(player.dbref),
+		get_db().oget_attribute(player.dbref,NAME_ATTR) + emoteformat.format(args))
 
-def cmd_say(player,args):
-	player.send(get_db().oget_attribute(player.dbref,NAME_ATTR) + ' says, "'+args+'"')
 
-def cmd_create(player,args):
+def cmd_create(player,args,extra):
 
 	db = get_db()
 	# no quota or cost right now.
@@ -105,26 +115,9 @@ def cmd_create(player,args):
 		o = db.ocreate()
 		db.oset_attribute(o,NAME_ATTR,args)
 		db.omove(o,player.dbref)
-	
-
-def cmd_describe(player,args):
-	
-	db = get_db()
-	a = _split_command_string_on(args,'=')
-	dbref = _get_dbref(player,a[0])
-
-	if (dbref != db.nothing):
-		if (a[1] != None):
-			db.oset_attribute(dbref,DESC_ATTR,a[1])
-			player.send("Described.")
-		else :
-			db.oclear_attribute(dbref,DESC_ATTR)
-	else : 
-		player.send('I don\'t see anything named ' + a[0] + ' here.')
 
 
-
-def cmd_look(player,args):
+def cmd_look(player,args,extra):
 
 	db = get_db()
 
@@ -144,8 +137,8 @@ def cmd_look(player,args):
 
 	# room...
 	if (dbref == loc) :
-		contains = _get_room_inventory(player,dbref,False)
-		exits = _get_room_exits(player,dbref,False)
+		contains = _get_room_inventory(dbref,False)
+		exits = _get_room_exits(dbref,False)
 		contains.remove(player.dbref)
 
 		if (len(exits)>0):
@@ -182,7 +175,7 @@ def _link_exit(player,exit,todbref):
 		db.oset_attribute(exit,DROPTO_ATTR,todbref)
 	
  
-def cmd_dig(player,args):
+def cmd_dig(player,args,extra):
 
 	db = get_db()
 	a = _split_command_string_on(args,'=')
@@ -209,14 +202,14 @@ def cmd_dig(player,args):
 
 def _command_move_player(player,loc):
 	get_db().omove(player.dbref,loc)
-	cmd_look(player,'')
+	cmd_look(player,'',None)
 	
 
-def cmd_dump(player,args):
+def cmd_dump(player,args,extra):
 	get_world().save("in.db")
 	
 
-def cmd_teleport(player,args):
+def cmd_teleport(player,args,extra):
 
 	db = get_db()
 	a = _split_command_string_on(args,'=')
@@ -225,28 +218,31 @@ def cmd_teleport(player,args):
 	
 	if db.ohas_flag(loc,ROOM_FLAG) and not db.ohas_flag(dbref,ROOM_FLAG) and not db.ohas_flag(dbref,EXIT_FLAG):
 		db.omove(dbref,loc)
-		cmd_look(player,'')
+		cmd_look(player,'',None)
 
 
 def init_commands() : 
-	_commands['look'] 			= cmd_look
-	_commands['l'] 				= cmd_look
-	_commands['quit']   		= cmd_quit
-	_commands['logout'] 		= cmd_quit
-	_commands['shutdown']       = cmd_shutdown
-	_commands['say'] 			= cmd_say
-	_commands['pose'] 			= cmd_pose
-	_commands['semipose']		= cmd_semipose
-	_nospacecommands[':'] 		= cmd_pose
-	_nospacecommands[';'] 		= cmd_semipose
-	_nospacecommands['"']       = cmd_say
-	_commands['@name']			= cmd_name 
-	_commands['@create']		= cmd_create
-	_commands['@describe']		= cmd_describe
-	_commands['@desc'] 			= cmd_describe
-	_commands['@dig'] 			= cmd_dig
-	_commands['@teleport'] 		= cmd_teleport 
-	_commands['@tel']			= cmd_teleport 
+	_commands['look'] 			= [cmd_look,None]
+	_commands['l'] 				= [cmd_look,None]
+	_commands['quit']   		= [cmd_quit,None]
+	_commands['logout'] 		= [cmd_quit,None]
+	_commands['shutdown']       = [cmd_shutdown,None]
+	_commands['say'] 			= [cmd_emote,' says, "{}"']
+	_commands['pose'] 			= [cmd_emote,' {}']
+	_commands['semipose']		= [cmd_emote,'{}']
+	_nospacecommands[':'] 		= [cmd_emote,' {}']
+	_nospacecommands[';'] 		= [cmd_emote,'{}']
+	_nospacecommands['"']       = [cmd_emote,' says, "{}"']
+	_commands['@name']			= [_set_named_attr,NAME_ATTR] 
+	_commands['@create']		= [cmd_create,None]
+	_commands['@describe']		= [_set_named_attr,DESC_ATTR]
+	_commands['@desc'] 			= [_set_named_attr,DESC_ATTR]
+	_commands['@dig'] 			= [cmd_dig,None]
+	_commands['@teleport'] 		= [cmd_teleport,None] 
+	_commands['@tel']			= [cmd_teleport,None]
+	_commands['@osucc']			= [_set_named_attr,OSUCCESS_ATTR]
+	_commands['@osuccess']		= [_set_named_attr,OSUCCESS_ATTR]
+
 	#_commadns['@dig/teleport']  = cmd_dig_teleport
 
 
@@ -255,6 +251,18 @@ def _match_exit_alias(e,str) :
 		if n==str:
 			return True
 	return False
+
+def cmd_take_exit(player,exit):
+
+	db = get_db()
+	if not db.ohas_attribute(exit,DROPTO_ATTR):
+		player.send('That exit leads nowhere...[unlinked exit]')
+		return
+
+	if db.ohas_attribute(exit,OSUCCESS_ATTR):
+		_broadcast_location(db.oget_location(player.dbref),db.oget_attribute(exit,OSUCCESS_ATTR))
+
+	_command_move_player(player,db.oget_attribute(exit,DROPTO_ATTR))
 
 
 def hide_player(player_dbref):
@@ -275,7 +283,7 @@ def connect_character(player,name,password):
 	player.set_connecting(False)
 	player.send("Connected...\n")
 	unhide_player(player.dbref)
-	cmd_look(player,'')
+	cmd_look(player,'',None)
 
 
 def create_character(player,name,password):
@@ -298,7 +306,7 @@ def create_character(player,name,password):
 
 	player.send("Character named " + name + " created.")
 
-	cmd_look(player,'')
+	cmd_look(player,'',None)
 
 
 def process_connecting(player,args):
@@ -326,14 +334,14 @@ def process_command(player,args) :
 	w = get_world() 
 	db = get_db()
 
-	for e in _get_room_exits(player,db.oget_location(player.dbref),True):
+	for e in _get_room_exits(db.oget_location(player.dbref),True):
 		if (_match_exit_alias(e,args)):
-			_command_move_player(player,db.oget_attribute(e,DROPTO_ATTR))
+			cmd_take_exit(player,e)
 			matched = True
 
 	# test 1 character / nospace commands
 	if (not matched) and (args[0] in _nospacecommands):
-		_nospacecommands[args[0]](player,args[1:])
+		_nospacecommands[args[0]][0](player,args[1:],_nospacecommands[args[0]][1])
 		matched = True
 
 	if not matched:
@@ -342,7 +350,7 @@ def process_command(player,args) :
 		if args[0] in _commands : 
 			if len(args) == 1:
 				args.append('')
-			_commands[args[0]](player,args[1])
+			_commands[args[0]][0](player,args[1],_commands[args[0]][1])
 			matched = True
 
 	if not matched: 
