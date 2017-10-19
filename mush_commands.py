@@ -34,8 +34,21 @@ def _get_room_exits(loc,hidden) :
 	return [x for x in db.oget_contains(loc) if db.ohas_flag(x,EXIT_FLAG) and (hidden or not db.ohas_flag(x,HIDDEN_FLAG))]
 	
 
+def _eval_string(dbref,str):
+	db = get_db()
+	name = db.oget_attribute(dbref,NAME_ATTR)
+
+	str = str.replace('%n',name.lower())
+	str = str.replace('%N',name)
+
+	return str
+
+
+
+
 def _get_dbref(player,a):
 
+	a = a.lower()
 	db = get_db()
 	loc = db.oget_location(player.dbref)
 	# get "built in references
@@ -48,12 +61,12 @@ def _get_dbref(player,a):
 
 	# is this the name of an object the player is carrying?
 	for l in db.oget_contains(player.dbref):
-		if a == db.oget_attribute(l,NAME_ATTR):
+		if a == db.oget_attribute(l,NAME_ATTR).lower():
 			return l
 
 	# is this the name of an object in the same room?
 	for l in _get_room_inventory(loc,False):
-		if a == db.oget_attribute(l,NAME_ATTR):
+		if a == db.oget_attribute(l,NAME_ATTR).lower():
 			return l 
 
 	# is this an exit (including alias)
@@ -207,6 +220,31 @@ def _command_move_player(player,loc):
 
 def cmd_dump(player,args,extra):
 	get_world().save("in.db")
+
+def cmd_examine(player,args,extra):
+	db = get_db()
+
+	dbref = db.oget_location(player.dbref) if args == '' else _get_dbref(player,args)
+	if dbref == db.nothing:
+		player.send('you don\'t see anything named ' + args +' here.')
+		return
+
+	player.send(db.oget_attribute(dbref,NAME_ATTR) + '(#'+str(dbref)+')')
+	player.send(db.oget_attribute(dbref,DESC_ATTR))
+
+	s = 'flags: '
+	for f in db.oget_flags(dbref):
+		s = s + f.upper()+' '
+	player.send(s)
+
+	print (db.oget_all_attributes(dbref))
+	for a in db.oget_all_attributes(dbref):
+
+		if (a != NAME_ATTR and a != DESC_ATTR):
+			player.send(a.upper()+': '+str(db.oget_attribute(dbref,a)))
+
+
+
 	
 
 def cmd_teleport(player,args,extra):
@@ -242,13 +280,18 @@ def init_commands() :
 	_commands['@tel']			= [cmd_teleport,None]
 	_commands['@osucc']			= [_set_named_attr,OSUCCESS_ATTR]
 	_commands['@osuccess']		= [_set_named_attr,OSUCCESS_ATTR]
+	_commands['examine']		= [cmd_examine,None]
+	_commands['ex']				= [cmd_examine,None]
+	_commands['e']				= [cmd_examine,None]
+
 
 	#_commadns['@dig/teleport']  = cmd_dig_teleport
 
 
 def _match_exit_alias(e,str) :
+	str = str.lower()
 	for n in get_db().oget_attribute(e,NAME_ATTR).split(';'):
-		if n==str:
+		if n.lower()==str:
 			return True
 	return False
 
@@ -260,7 +303,9 @@ def cmd_take_exit(player,exit):
 		return
 
 	if db.ohas_attribute(exit,OSUCCESS_ATTR):
-		_broadcast_location(db.oget_location(player.dbref),db.oget_attribute(exit,OSUCCESS_ATTR))
+		_broadcast_location(
+			db.oget_location(player.dbref),
+			_eval_string(player.dbref,db.oget_attribute(exit,OSUCCESS_ATTR)))
 
 	_command_move_player(player,db.oget_attribute(exit,DROPTO_ATTR))
 
@@ -311,12 +356,29 @@ def create_character(player,name,password):
 
 def process_connecting(player,args):
 	args = args.split(' ')
-	if (args[0] == 'create') and (len(args) == 3):
+	if (args[0].lower() == 'create') and (len(args) == 3):
 		create_character(player,args[1],args[2])
-	elif (args[0] == 'connect' and len(args) == 3):
+	elif (args[0].lower() == 'connect' and len(args) == 3):
 		connect_character(player,args[1],args[2])
 	else:
 		player.send("Only connect or create allowed here.")
+
+
+def _get_cmd_fn_and_args(name): 
+	fn = None
+	args = None
+
+	if cmd in _nospacecommands:
+		fn = _nospacecommands[cmd][0]
+		args = _nospacecommands[cmd][1]
+	elif cmd in _commands:
+		fn = _commands[cmd][0]
+		args = _commands[cmd][1]
+
+	return fn,args
+
+
+
 
 def process_command(player,args) :
 
@@ -340,18 +402,29 @@ def process_command(player,args) :
 			matched = True
 
 	# test 1 character / nospace commands
-	if (not matched) and (args[0] in _nospacecommands):
-		_nospacecommands[args[0]][0](player,args[1:],_nospacecommands[args[0]][1])
+	cmd = args[0].lower()
+	fn = None
+
+
+	# get handler function for nospace commands if match...
+	if (not matched) and (cmd in _nospacecommands):
+		fn 	 	= _nospacecommands[cmd][0]
+		data  	= args[1:]
+		extra 	= _nospacecommands[cmd][1]
 		matched = True
 
+	# get handler function for regular commands if match...
 	if not matched:
-		# test regular commands
 		args = args.split(' ',1)
-		if args[0] in _commands : 
-			if len(args) == 1:
-				args.append('')
-			_commands[args[0]][0](player,args[1],_commands[args[0]][1])
+		cmd = args[0].lower()
+		if cmd in _commands : 
+			fn = _commands[cmd][0]
+			data = '' if len(args)==1 else args[1]
+			extra = _commands[cmd][1]
 			matched = True
+
+	if (fn):
+		fn(player,data,extra)
 
 	if not matched: 
 		player.send("huh?")

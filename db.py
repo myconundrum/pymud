@@ -86,6 +86,10 @@ class object_database():
 	def ohas_attribute(self,dbref,name) :
 		if (self.oexists(dbref)) :
 			return name in self.objects[dbref].attributes
+
+	def oget_all_attributes(self,dbref):
+		if (self.oexists(dbref)):
+			return self.objects[dbref].attributes
 	def ohas_flag(self,dbref,flag) : 
 		return True if self.oexists(dbref) and flag in self.objects[dbref].flags else False
 	def oget_flags(self,dbref): 
